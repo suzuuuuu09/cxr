@@ -22,6 +22,7 @@ enum Commands {
 }
 
 fn main() {
+    // コマンドライン引数を解析する
     let cli = Cli::parse();
 
     match &cli.command {
