@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 mod args;
 mod generator;
 mod hooks;
+mod lint;
 mod overwrite;
 mod template;
 
@@ -36,6 +37,7 @@ fn main() {
             Commands::Remove { name } => handle_remove_command(name),
             Commands::Fzf => handle_fzf_command(&cli),
             Commands::List => handle_list_command(),
+            Commands::Lint { name, all } => handle_lint_command(name.as_deref(), *all),
         }
     }
 
@@ -196,6 +198,78 @@ fn handle_list_command() {
     }
 }
 
+/// `cx lint <template>` / `cx lint --all` の処理
+fn handle_lint_command(name: Option<&str>, all: bool) {
+    let config_dir = match get_config_dir() {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "{} Failed to find configuration directory.",
+                "Error:".red().bold()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let template_paths = if all {
+        let paths = list_template_files(&config_dir);
+        if paths.is_empty() {
+            eprint_error(
+                "No templates found.",
+                "place a template under the config directory",
+            );
+            std::process::exit(1);
+        }
+        paths
+    } else if let Some(template_name) = name {
+        let path = config_dir.join(format!("{}.yaml", template_name));
+        if !path.exists() {
+            eprint_error(
+                &format!("Template file '{}' does not exist.", display_name(&path)),
+                "use `cx list` to see available templates",
+            );
+            std::process::exit(1);
+        }
+        vec![path]
+    } else {
+        eprint_error(
+            "Missing template name.",
+            "use `cx lint <template>` or `cx lint --all`",
+        );
+        std::process::exit(2);
+    };
+
+    let mut total_errors = 0;
+    for path in template_paths {
+        let report = lint::lint_template_file(&path);
+        if report.errors.is_empty() {
+            println!("  {} {}", "OK:".green().bold(), display_name(&path));
+            continue;
+        }
+
+        total_errors += report.errors.len();
+        eprintln!(
+            "{} {}",
+            "Lint errors in".red().bold(),
+            display_name(&path)
+        );
+        for err in report.errors {
+            eprintln!("  - {}", err);
+        }
+    }
+
+    if total_errors > 0 {
+        eprintln!(
+            "{} lint failed ({} issues).",
+            "Error:".red().bold(),
+            total_errors
+        );
+        std::process::exit(1);
+    }
+
+    println!("{} lint passed.", "Success:".green().bold());
+}
+
 /// `cx fzf` コマンドの処理
 fn handle_fzf_command(cli: &Cli) {
     let config_dir = match get_config_dir() {
@@ -263,6 +337,24 @@ fn load_templates(config_dir: &Path) -> Vec<TemplateInfo> {
             name,
             description: desc,
         });
+    }
+
+    templates
+}
+
+fn list_template_files(config_dir: &Path) -> Vec<PathBuf> {
+    let mut templates = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(config_dir) else {
+        return templates;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if Path::extension(&path).and_then(|ext| ext.to_str()) != Some("yaml") {
+            continue;
+        }
+        templates.push(path);
     }
 
     templates

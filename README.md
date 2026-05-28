@@ -23,6 +23,7 @@ cargo run -- list
 cargo run -- new <name>
 cargo run -- remove <name>
 cargo run -- fzf
+cargo run -- lint <template> [--all]
 cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT] [--dry-run] [--force|--backup|--skip]
 ```
 
@@ -34,6 +35,7 @@ If installed, you can use `cx` instead of `cargo run --`.
 - `new <name>`: create `<name>.yaml` under `~/.config/cx/` or `$XDG_CONFIG_HOME/cx/`
 - `remove <name>` (`delete <name>`): remove an existing template file
 - `fzf`: select a template via fzf and generate
+- `lint <template>` (`--all`): validate a template (or all templates) without generating files
 - `<template>`: generate files from the specified template
 
 ## Template location

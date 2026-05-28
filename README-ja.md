@@ -23,6 +23,7 @@ cargo run -- list
 cargo run -- new <name>
 cargo run -- remove <name>
 cargo run -- fzf
+cargo run -- lint <template> [--all]
 cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT] [--dry-run] [--force|--backup|--skip]
 ```
 
@@ -34,6 +35,7 @@ cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT] [--dry-run] [--force|--ba
 - `new <name>` : `~/.config/cx/` または `$XDG_CONFIG_HOME/cx/` に `<name>.yaml` を作成
 - `remove <name>`（`delete <name>`）: 既存のテンプレートを削除
 - `fzf` : fzf でテンプレートを選択して生成
+- `lint <template>`（`--all`）: 生成せずにテンプレートを検証（または全テンプレートを検証）
 - `<template>` : 指定したテンプレートからファイルを生成
 
 ## テンプレートの置き場所

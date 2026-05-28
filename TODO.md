@@ -6,4 +6,4 @@
 - [x] force/backup/skipで上書きの挙動を指定
 - [x] テンプレ検索、fzfで選択してテンプレートを指定する
 - [x] pre/post hookの追加
-- [ ] バリデーション/lintの追加
+- [x] バリデーション/lintの追加

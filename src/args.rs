@@ -63,4 +63,13 @@ pub enum Commands {
 
     #[command(about = "List all available templates")]
     List,
+
+    #[command(about = "Lint template files")]
+    Lint {
+        #[arg(value_name = "TEMPLATE")]
+        name: Option<String>,
+
+        #[arg(long = "all", help = "Lint all templates", conflicts_with = "name")]
+        all: bool,
+    },
 }
