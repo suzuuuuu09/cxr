@@ -33,6 +33,9 @@ pub enum Commands {
     #[command(about = "Create a new template file")]
     New { name: String },
 
+    #[command(about = "Remove a template file", alias = "delete")]
+    Remove { name: String },
+
     #[command(about = "List all available templates")]
     List,
 }

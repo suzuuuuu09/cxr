@@ -27,12 +27,16 @@ pub fn create_items(
                     resolved_dir_name = resolved_dir_name.replace(&target, val);
                 }
 
-                let dir_path = base_path.join(resolved_dir_name);
+                let dir_path = base_path.join(&resolved_dir_name);
 
                 match std::fs::create_dir_all(&dir_path) {
-                    Ok(_) => println!("  {} {:?}", "Created Dir:".green().bold(), dir_path),
+                    Ok(_) => println!(
+                        "  {} {}",
+                        "Created Dir:".green().bold(),
+                        resolved_dir_name.as_str()
+                    ),
                     Err(e) => eprint_error(
-                        &format!("Failed to create directory '{:?}'", dir_path),
+                        &format!("Failed to create directory '{}'", resolved_dir_name),
                         &e.to_string(),
                     ),
                 }
@@ -58,7 +62,7 @@ pub fn create_items(
                     match ans {
                         Ok(true) => {} // そのまま処理を続行
                         _ => {
-                            println!("   {} {:?}", "Skipped:".yellow(), file_path);
+                            println!("   {} {}", "Skipped:".yellow(), resolved_file_name);
                             continue; // 次のアイテムの処理へスキップ
                         }
                     }
@@ -77,22 +81,26 @@ pub fn create_items(
                             }
                             if let Err(e) = file.write_all(content_str.as_bytes()) {
                                 eprint_error(
-                                    &format!("Failed to write to file '{:?}'", file_path),
+                                    &format!("Failed to write to file '{}'", resolved_file_name),
                                     &e.to_string(),
                                 );
                             } else {
-                                println!("  {} {:?}", "Created File:".green().bold(), file_path);
+                                println!(
+                                    "  {} {}",
+                                    "Created File:".green().bold(),
+                                    resolved_file_name
+                                );
                             }
                         } else {
                             println!(
-                                "  {} {:?} (empty)",
+                                "  {} {} (empty)",
                                 "Created File:".green().bold(),
-                                file_path
+                                resolved_file_name
                             );
                         }
                     }
                     Err(e) => eprint_error(
-                        &format!("Failed to create file '{:?}'", file_path),
+                        &format!("Failed to create file '{}'", resolved_file_name),
                         &e.to_string(),
                     ),
                 }

@@ -22,6 +22,7 @@ fn main() {
     if let Some(cmd) = &cli.command {
         match cmd {
             Commands::New { name } => handle_new_command(name),
+            Commands::Remove { name } => handle_remove_command(name),
             Commands::List => handle_list_command(),
         }
     }
@@ -80,21 +81,86 @@ fn handle_new_command(name: &str) {
         Ok(mut file) => {
             if let Err(e) = file.write_all(DEFAULT_YAML.as_bytes()) {
                 eprint_error(
-                    &format!("Failed to write to template file '{:?}'", filename),
+                    &format!(
+                        "Failed to write to template file '{}'",
+                        display_name(&filename)
+                    ),
                     &e.to_string(),
                 );
             } else {
                 println!(
-                    "{} Template file '{:?}' created successfully.",
+                    "{} Template file '{}' created successfully.",
                     "Success:".green().bold(),
-                    filename
+                    display_name(&filename)
                 );
             }
         }
         Err(e) => eprint_error(
-            &format!("Failed to create template file '{:?}'", filename),
+            &format!(
+                "Failed to create template file '{}'",
+                display_name(&filename)
+            ),
             &e.to_string(),
         ),
+    }
+}
+
+/// `cx remove <name>` コマンドの処理
+fn handle_remove_command(name: &str) {
+    let config_dir = match get_config_dir() {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "{} Failed to find configuration directory.",
+                "Error:".red().bold()
+            );
+            return;
+        }
+    };
+
+    let filename = config_dir.join(format!("{}.yaml", name));
+
+    if !filename.exists() {
+        eprintln!(
+            "{} Template file '{}' does not exist.",
+            "Error:".red().bold(),
+            display_name(&filename)
+        );
+        return;
+    }
+
+    let prompt_msg = format!(
+        "Are you sure you want to delete template '{}'?",
+        display_name(&filename)
+    );
+    let ans = inquire::Confirm::new(&prompt_msg)
+        .with_default(false)
+        .prompt();
+
+    match ans {
+        Ok(true) => {
+            if let Err(e) = std::fs::remove_file(&filename) {
+                eprint_error(
+                    &format!(
+                        "Failed to delete template file '{}'",
+                        display_name(&filename)
+                    ),
+                    &e.to_string(),
+                );
+            } else {
+                println!(
+                    "{} Template file '{}' deleted successfully.",
+                    "Success:".green().bold(),
+                    display_name(&filename)
+                );
+            }
+        }
+        _ => {
+            println!(
+                "{}",
+                "Operation cancelled. Template file was preserved.".yellow()
+            );
+        }
     }
 }
 
@@ -192,13 +258,10 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
     }
 
     // 対話プロンプトで変数を取得
-    match template.variables {
-        Some(variables) => {
-            if !collect_variables(variables, &mut variable_map) {
-                return; // ユーザーが中断した場合は終了
-            }
+    if let Some(variables) = template.variables {
+        if !collect_variables(variables, &mut variable_map) {
+            return; // ユーザーが中断した場合は終了
         }
-        None => todo!(),
     }
 
     println!("\n{}", "Generating items...".bold().dimmed());
@@ -228,9 +291,15 @@ fn collect_variables(variables: Vec<Variable>, variable_map: &mut HashMap<String
         }
 
         match text_prompt.prompt() {
-            Ok(input) => {
-                variable_map.insert(var_name, input.trim().to_string());
-            }
+            Ok(input) => match resolve_variable_input(&input, default_val) {
+                Ok(value) => {
+                    variable_map.insert(var_name, value);
+                }
+                Err(err) => {
+                    eprint_error(&format!("Variable '{}' cannot be empty", var_name), err);
+                    return false;
+                }
+            },
             Err(inquire::InquireError::OperationInterrupted)
             | Err(inquire::InquireError::OperationCanceled) => {
                 println!("\n{}", "Operation cancelled.".red());
@@ -255,4 +324,47 @@ fn collect_variables(variables: Vec<Variable>, variable_map: &mut HashMap<String
 
 fn eprint_error(context: &str, err: &str) {
     eprintln!("{} {}: {}", "Error:".red().bold(), context, err);
+}
+
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn resolve_variable_input(
+    input: &str,
+    default_value: Option<String>,
+) -> Result<String, &'static str> {
+    let input = input.trim();
+
+    if input.is_empty() {
+        default_value.ok_or("a value is required")
+    } else {
+        Ok(input.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_variable_input;
+
+    #[test]
+    fn resolve_variable_input_rejects_blank_without_default() {
+        assert!(resolve_variable_input("   ", None).is_err());
+    }
+
+    #[test]
+    fn resolve_variable_input_uses_default_for_blank_input() {
+        assert_eq!(
+            resolve_variable_input("   ", Some("fallback".to_string())).unwrap(),
+            "fallback"
+        );
+    }
+
+    #[test]
+    fn resolve_variable_input_trims_non_blank_input() {
+        assert_eq!(resolve_variable_input("  value  ", None).unwrap(), "value");
+    }
 }
