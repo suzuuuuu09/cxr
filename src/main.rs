@@ -46,6 +46,30 @@ fn main() {
 
                 // 新しいテンプレートファイルを作成する
                 let filename = config_dir.join(format!("{}.yaml", name));
+
+                // すでに同名のテンプレートファイルが存在する場合は上書きの確認をする
+                if filename.exists() {
+                    let prompt_msg = format!("Template '{}.yaml' already exists. Overwrite?", name);
+                    // デフォルトは安全のために「いいえ(false)」にする
+                    let ans = inquire::Confirm::new(&prompt_msg)
+                        .with_default(false)
+                        .prompt();
+
+                    match ans {
+                        Ok(true) => {
+                            println!("{}", "Overwriting template...".yellow().dimmed());
+                        }
+                        _ => {
+                            // いいえ(No) や Ctrl+C でキャンセルされた場合は何もせず終了
+                            println!(
+                                "{}",
+                                "Operation cancelled. Existing template was preserved.".yellow()
+                            );
+                            return;
+                        }
+                    }
+                }
+                // ファイルを作成してデフォルトのYAML内容を書き込む
                 match File::create(&filename) {
                     Ok(mut file) => {
                         if let Err(e) = file.write_all(DEFAULT_YAML.as_bytes()) {
