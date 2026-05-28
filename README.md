@@ -21,7 +21,8 @@ cargo build
 ```bash
 cargo run -- list
 cargo run -- new <name>
-cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT]
+cargo run -- fzf
+cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT] [--dry-run] [--force|--backup|--skip]
 ```
 
 If installed, you can use `cx` instead of `cargo run --`.
@@ -30,6 +31,7 @@ If installed, you can use `cx` instead of `cargo run --`.
 
 - `list`: show available templates
 - `new <name>`: create `<name>.yaml` under `~/.config/cx/` or `$XDG_CONFIG_HOME/cx/`
+- `fzf`: select a template via fzf and generate
 - `<template>`: generate files from the specified template
 
 ## Template location
@@ -76,3 +78,19 @@ items:
 ## Existing files
 
 If a file or directory already exists, cx asks before overwriting it.
+
+## Overwrite strategies
+
+- `--force`: overwrite existing files without prompting
+- `--backup`: rename existing files to `.bak` before writing (overwrites existing `.bak`)
+- `--skip`: skip existing files without prompting
+
+Directories are reused; overwrite strategies apply to files only. `--backup` will rename existing directories to `.bak` before creating a new directory.
+
+## Dry run
+
+Use `--dry-run` (`-n`) to preview the generated items without writing files. It still checks existing paths and reports when it would overwrite them.
+
+## fzf selection
+
+`cx fzf` uses [fzf](https://github.com/junegunn/fzf) to select a template and then generates files. If fzf is not installed or the selection is cancelled, cx exits with an error.

@@ -21,7 +21,8 @@ cargo build
 ```bash
 cargo run -- list
 cargo run -- new <name>
-cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT]
+cargo run -- fzf
+cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT] [--dry-run] [--force|--backup|--skip]
 ```
 
 インストール済みなら `cargo run --` の代わりに `cx` を使えます。
@@ -30,6 +31,7 @@ cargo run -- <template> [-v VAR=VALUE ...] [-o OUTPUT]
 
 - `list` : 利用可能なテンプレートを表示
 - `new <name>` : `~/.config/cx/` または `$XDG_CONFIG_HOME/cx/` に `<name>.yaml` を作成
+- `fzf` : fzf でテンプレートを選択して生成
 - `<template>` : 指定したテンプレートからファイルを生成
 
 ## テンプレートの置き場所
@@ -76,3 +78,19 @@ items:
 ## 既存ファイルの扱い
 
 同名のディレクトリやファイルがある場合は、上書きするかどうかを確認します。
+
+## 上書き戦略
+
+- `--force`: 既存ファイルを確認なしで上書き
+- `--backup`: 既存ファイルを `.bak` に退避してから書き込み（既存の `.bak` は上書き）
+- `--skip`: 既存ファイルを確認なしでスキップ
+
+ディレクトリは再利用され、上書き戦略はファイルにのみ適用されます。`--backup` の場合は既存ディレクトリを `.bak` に退避してから新しく作成します。
+
+## ドライラン
+
+`--dry-run`（`-n`）を付けると、実際には書き込まずに生成結果だけを表示します。既存チェックは行い、上書き対象は「Would overwrite」と表示します。
+
+## fzf 選択
+
+`cx fzf` は [fzf](https://github.com/junegunn/fzf) を使ってテンプレートを選択し、そのまま生成します。fzf が無い場合やキャンセル時はエラーで終了します。
