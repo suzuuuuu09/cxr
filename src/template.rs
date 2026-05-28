@@ -6,6 +6,8 @@ pub struct Template {
     pub name: String,
     pub description: String,
     pub variables: Option<Vec<Variable>>,
+    pub pre_hook: Option<String>,
+    pub post_hook: Option<String>,
     pub items: Vec<TemplateItem>,
 }
 

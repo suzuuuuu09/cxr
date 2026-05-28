@@ -355,15 +355,28 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
         }
     }
 
-    if cli.dry_run {
-        println!("{}", "Dry run: no files will be written.".yellow().dimmed());
-    }
-    println!("\n{}", "Generating items...".bold().dimmed());
     let target_dir = cli.output.as_deref().unwrap_or(".");
     let target_path = Path::new(target_dir);
 
-    let overwrite = overwrite_strategy(cli);
     std::fs::create_dir_all(target_path).unwrap();
+    if cli.dry_run {
+        println!("{}", "Dry run: no files will be written.".yellow().dimmed());
+    }
+
+    if cli.dry_run {
+        println!(
+            "{}",
+            "Dry run: hooks will not be executed.".yellow().dimmed()
+        );
+    } else if let Some(hook) = template.pre_hook.as_deref() {
+        if let Err(err) = run_hook("pre_hook", hook, target_path, &variable_map) {
+            eprint_error("Failed to run pre_hook", &err);
+            std::process::exit(1);
+        }
+    }
+    println!("\n{}", "Generating items...".bold().dimmed());
+
+    let overwrite = overwrite_strategy(cli);
     generator::create_items(
         &template.items,
         target_path,
@@ -371,6 +384,15 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
         cli.dry_run,
         overwrite,
     );
+
+    if !cli.dry_run {
+        if let Some(hook) = template.post_hook.as_deref() {
+            if let Err(err) = run_hook("post_hook", hook, target_path, &variable_map) {
+                eprint_error("Failed to run post_hook", &err);
+                std::process::exit(1);
+            }
+        }
+    }
     println!("{}", "\nDone!".green().bold());
 }
 
@@ -457,6 +479,40 @@ fn overwrite_strategy(cli: &Cli) -> generator::OverwriteStrategy {
     } else {
         generator::OverwriteStrategy::Prompt
     }
+}
+
+fn run_hook(
+    name: &str,
+    hook: &str,
+    target_path: &Path,
+    variable_map: &HashMap<String, String>,
+) -> Result<(), String> {
+    let command = replace_variables(hook, variable_map);
+    let status = Command::new("/bin/sh")
+        .arg("-c")
+        .arg(&command)
+        .current_dir(target_path)
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} exited with status {}",
+            name,
+            status.code().unwrap_or(-1)
+        ))
+    }
+}
+
+fn replace_variables(input: &str, variable_map: &HashMap<String, String>) -> String {
+    let mut resolved = input.to_string();
+    for (key, val) in variable_map {
+        let target = format!("{{{{ {} }}}}", key);
+        resolved = resolved.replace(&target, val);
+    }
+    resolved
 }
 
 #[cfg(test)]

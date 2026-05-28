@@ -5,5 +5,5 @@
 - [x] ドライラン
 - [x] force/backup/skipで上書きの挙動を指定
 - [x] テンプレ検索、fzfで選択してテンプレートを指定する
-- [ ] pre/post hookの追加
+- [x] pre/post hookの追加
 - [ ] バリデーション/lintの追加
