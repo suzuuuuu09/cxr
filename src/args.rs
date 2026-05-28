@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
     name = "cx",
     version = "0.1.0",
     author = "suzuuuuu09",
-    about = "A tool to generate a directory structure from a TOML template."
+    about = "A tool to generate a directory structure from a YAML template."
 )]
 pub struct Cli {
     // サブコマンドを定義する
