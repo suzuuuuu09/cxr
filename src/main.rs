@@ -150,17 +150,36 @@ fn main() {
 
                     if let Some(variables) = template.variables {
                         for var in variables {
-                            if variable_map.contains_key(&var) {
-                                continue;
+                            let var_name = var.name();
+
+                            if variable_map.contains_key(&var_name) {
+                                continue; // コマンドライン引数で指定されている場合はスキップ
                             }
-                            let prompt_msg = format!("Enter value for {}:", var);
-                            match Text::new(&prompt_msg).prompt() {
-                                Ok(value) => {
-                                    variable_map.insert(var.clone(), value.trim().to_string());
+
+                            let prompt_msg = format!("Enter value for {}:", var_name);
+                            let mut text_prompt = Text::new(&prompt_msg);
+
+                            // 変数にデフォルト値がある場合はプロンプトに表示する
+                            let default_val = var.default_value();
+                            if let Some(ref val) = default_val {
+                                text_prompt = text_prompt.with_default(val);
+                            }
+
+                            match text_prompt.prompt() {
+                                Ok(input) => {
+                                    variable_map.insert(var_name, input.trim().to_string());
                                 }
-                                Err(_) => {
-                                    eprintln!("{}", "Operation cancelled.".red());
-                                    return;
+                                Err(inquire::InquireError::OperationInterrupted)
+                                | Err(inquire::InquireError::OperationCanceled) => {
+                                    println!("\n{}", "Operation cancelled.".red());
+                                    return; // Ctrl+C や Esc の時は即座に中断して離脱
+                                }
+                                Err(e) => {
+                                    eprint_error(
+                                        &format!("Failed to get input for variable '{}'", var_name),
+                                        &e.to_string(),
+                                    );
+                                    return; // その他のエラー時も作成処理へ進ませない
                                 }
                             }
                         }
@@ -172,7 +191,12 @@ fn main() {
                     }
 
                     println!("\n{}", "Generating items...".bold().dimmed());
-                    generator::create_items(&template.items, Path::new("."), &variable_map);
+                    let target_dir = cli.output.as_deref().unwrap_or(".");
+                    let target_path = Path::new(target_dir);
+
+                    // 出力先ディレクトリが存在しない場合は作成する
+                    std::fs::create_dir_all(target_path).unwrap();
+                    generator::create_items(&template.items, target_path, &variable_map);
                     println!("{}", "\nDone!".green().bold());
                 }
                 Err(e) => eprint_error(

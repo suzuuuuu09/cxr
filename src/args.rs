@@ -18,6 +18,13 @@ pub struct Cli {
 
     #[arg(short = 'v', long = "var", help = "Set a variable value (format: VAR=VALUE)", num_args = 1..)]
     pub vars: Vec<String>,
+
+    #[arg(
+        short = 'o',
+        long = "output",
+        help = "Output directory (default: current directory)"
+    )]
+    pub output: Option<String>,
 }
 
 #[derive(Subcommand)]
