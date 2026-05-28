@@ -116,10 +116,16 @@ fn main() {
                         println!("Items:");
                         generator::create_items(&template.items, Path::new("."), &variable_map);
                     }
-                    Err(e) => eprintln!("Failed to parse template file '{:?}': {}", config_dir, e),
+                    Err(e) => eprintln!(
+                        "Failed to parse template file '{:?}': {}",
+                        template_file_path, e
+                    ),
                 }
             }
-            Err(e) => eprintln!("Failed to read template file '{:?}': {}", config_dir, e),
+            Err(e) => eprintln!(
+                "Failed to read template file '{:?}': {}",
+                template_file_path, e
+            ),
         }
     }
 }
