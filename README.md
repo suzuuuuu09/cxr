@@ -106,6 +106,22 @@ post_hook: "echo post {{ project_name }}"
 
 Hooks are executed with `/bin/sh -c`. Dry run does not execute hooks.
 
+## Non-interactive variables
+
+Use `--vars-file` to supply variables from a YAML or JSON file. The file should contain a mapping of variable names to string values, for example:
+
+```yaml
+project_name: myproject
+author: Jane
+```
+
+Precedence: command-line `-v VAR=VALUE` entries override values from `--vars-file`. Values from `--vars-file` override interactive prompts and template defaults. Variables provided by `--vars-file` will not be prompted interactively. Example:
+
+```bash
+cargo run -- mytemplate --vars-file vars.yaml --dry-run
+```
+
+
 ## fzf selection
 
 `cx fzf` uses [fzf](https://github.com/junegunn/fzf) to select a template and then generates files. If fzf is not installed or the selection is cancelled, cx exits with an error.

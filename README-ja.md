@@ -106,6 +106,22 @@ post_hook: "echo post {{ project_name }}"
 
 実行方法は `/bin/sh -c` です。ドライラン時はフックを実行しません。
 
+## 非対話式変数（--vars-file）
+
+`--vars-file` に YAML または JSON 形式の変数マップを指定して、非対話で値を提供できます。ファイルは変数名をキー、文字列を値とするマッピングにしてください。例:
+
+```yaml
+project_name: myproject
+author: Jane
+```
+
+優先順位: コマンドラインの `-v VAR=VALUE` > `--vars-file` > 対話プロンプト > テンプレートのデフォルト。`--vars-file` に含まれる変数は対話プロンプトでは尋ねられません。使用例:
+
+```bash
+cargo run -- mytemplate --vars-file vars.yaml --dry-run
+```
+
+
 ## fzf 選択
 
 `cx fzf` は [fzf](https://github.com/junegunn/fzf) を使ってテンプレートを選択し、そのまま生成します。fzf が無い場合やキャンセル時はエラーで終了します。

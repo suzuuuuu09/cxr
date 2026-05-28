@@ -21,6 +21,12 @@ pub struct Cli {
     pub vars: Vec<String>,
 
     #[arg(
+        long = "vars-file",
+        help = "YAML or JSON file with variable mappings (non-interactive)"
+    )]
+    pub vars_file: Option<String>,
+
+    #[arg(
         short = 'o',
         long = "output",
         help = "Output directory (default: current directory)"
