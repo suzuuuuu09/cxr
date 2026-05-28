@@ -1,6 +1,8 @@
 [package]
 name = "cx"
-version = "0.1.0"
+version = "0.1.1"
+about = "A tool to generate a directory structure from a YAML template."
+authors = ["suzuuuuu09"]
 edition = "2024"
 
 [dependencies]

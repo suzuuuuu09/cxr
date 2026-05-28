@@ -1,13 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(
-    name = "cx",
-    version = "0.1.0",
-    author = "suzuuuuu09",
-    about = "A tool to generate a directory structure from a YAML template.",
-    arg_required_else_help = true
-)]
+#[command(name = "cx", version, author, about, arg_required_else_help = true)]
 pub struct Cli {
     // サブコマンドを定義する
     #[command(subcommand)]
