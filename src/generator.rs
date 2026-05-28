@@ -5,13 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug)]
-pub enum OverwriteStrategy {
-    Prompt,
-    Force,
-    Backup,
-    Skip,
-}
+use crate::overwrite::OverwriteStrategy;
 
 /// テンプレートアイテムのリストを処理して、ディレクトリやファイルを作成する関数
 ///
@@ -31,11 +25,7 @@ pub fn create_items(
                 name,
                 items: sub_items,
             } => {
-                let mut resolved_dir_name = name.clone();
-                for (key, val) in variable_map {
-                    let target = format!("{{{{ {} }}}}", key);
-                    resolved_dir_name = resolved_dir_name.replace(&target, val);
-                }
+                let resolved_dir_name = apply_vars(name.as_str(), variable_map);
 
                 let dir_path = base_path.join(&resolved_dir_name);
 
@@ -99,11 +89,7 @@ pub fn create_items(
                 }
             }
             TemplateItem::File { name, content } => {
-                let mut resolved_file_name = name.clone();
-                for (key, val) in variable_map {
-                    let target = format!("{{{{ {} }}}}", key);
-                    resolved_file_name = resolved_file_name.replace(&target, val);
-                }
+                let resolved_file_name = apply_vars(name.as_str(), variable_map);
 
                 let file_path = base_path.join(&resolved_file_name);
 
@@ -186,12 +172,8 @@ pub fn create_items(
                         use std::io::Write;
                         if let Some(content_str) = content {
                             // ファイル中身の変数を置換する
-                            let mut content_str = content_str.clone();
-                            for (key, val) in variable_map {
-                                let target = format!("{{{{ {} }}}}", key);
-                                content_str = content_str.replace(&target, val);
-                            }
-                            if let Err(e) = file.write_all(content_str.as_bytes()) {
+                            let content_to_write = apply_vars(&content_str, variable_map);
+                            if let Err(e) = file.write_all(content_to_write.as_bytes()) {
                                 eprint_error(
                                     &format!("Failed to write to file '{}'", resolved_file_name),
                                     &e.to_string(),
@@ -219,6 +201,15 @@ pub fn create_items(
             }
         }
     }
+}
+
+fn apply_vars(input: &str, variable_map: &HashMap<String, String>) -> String {
+    let mut resolved = input.to_string();
+    for (key, val) in variable_map {
+        let target = format!("{{{{ {} }}}}", key);
+        resolved = resolved.replace(&target, val);
+    }
+    resolved
 }
 
 // エラー表示用の共通ヘルパー関数

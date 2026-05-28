@@ -1,6 +1,7 @@
 use clap::Parser;
 use colored::*;
-use inquire::Text;
+
+mod vars;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -9,10 +10,13 @@ use std::process::{Command, Stdio};
 
 mod args;
 mod generator;
+mod hooks;
+mod overwrite;
 mod template;
 
 use args::{Cli, Commands};
-use template::{Template, Variable};
+use template::Template;
+mod vars_file;
 
 const DEFAULT_YAML: &str = include_str!("./default.yaml");
 
@@ -342,15 +346,33 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
 
     // 変数マップの作成
     let mut variable_map = HashMap::new();
+
+    // CLI vars (highest precedence)
     for var in &cli.vars {
         if let Some((key, value)) = var.split_once('=') {
             variable_map.insert(key.trim().to_string(), value.trim().to_string());
         }
     }
 
+    // vars-file (lower precedence than CLI but higher than interactive)
+    if let Some(vf) = &cli.vars_file {
+        match vars_file::load_vars_from_file(vf) {
+            Ok(map) => {
+                for (k, v) in map {
+                    variable_map.entry(k).or_insert(v);
+                }
+            }
+            Err(e) => {
+                eprint_error("Failed to load vars-file", &e);
+                return;
+            }
+        }
+    }
+
     // 対話プロンプトで変数を取得
-    if let Some(variables) = template.variables {
-        if !collect_variables(variables, &mut variable_map) {
+    if let Some(variables) = template.variables.clone() {
+        // If vars-file provided, skip interactive prompts for variables already present
+        if !vars::collect_variables(variables, &mut variable_map) {
             return; // ユーザーが中断した場合は終了
         }
     }
@@ -369,7 +391,7 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
             "Dry run: hooks will not be executed.".yellow().dimmed()
         );
     } else if let Some(hook) = template.pre_hook.as_deref() {
-        if let Err(err) = run_hook("pre_hook", hook, target_path, &variable_map) {
+        if let Err(err) = hooks::run_hook("pre_hook", hook, target_path, &variable_map) {
             eprint_error("Failed to run pre_hook", &err);
             std::process::exit(1);
         }
@@ -387,7 +409,7 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
 
     if !cli.dry_run {
         if let Some(hook) = template.post_hook.as_deref() {
-            if let Err(err) = run_hook("post_hook", hook, target_path, &variable_map) {
+            if let Err(err) = hooks::run_hook("post_hook", hook, target_path, &variable_map) {
                 eprint_error("Failed to run post_hook", &err);
                 std::process::exit(1);
             }
@@ -396,54 +418,6 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
     println!("{}", "\nDone!".green().bold());
 }
 
-/// ユーザーから変数の入力を集めるヘルパー関数（中断されたら false を返す）
-fn collect_variables(variables: Vec<Variable>, variable_map: &mut HashMap<String, String>) -> bool {
-    for var in variables {
-        let var_name = var.name();
-
-        if variable_map.contains_key(&var_name) {
-            continue;
-        }
-
-        let prompt_msg = format!("Enter value for {}:", var_name);
-        let mut text_prompt = Text::new(&prompt_msg);
-
-        let default_val = var.default_value();
-        if let Some(ref val) = default_val {
-            text_prompt = text_prompt.with_default(val);
-        }
-
-        match text_prompt.prompt() {
-            Ok(input) => match resolve_variable_input(&input, default_val) {
-                Ok(value) => {
-                    variable_map.insert(var_name, value);
-                }
-                Err(err) => {
-                    eprint_error(&format!("Variable '{}' cannot be empty", var_name), err);
-                    return false;
-                }
-            },
-            Err(inquire::InquireError::OperationInterrupted)
-            | Err(inquire::InquireError::OperationCanceled) => {
-                println!("\n{}", "Operation cancelled.".red());
-                return false;
-            }
-            Err(e) => {
-                eprint_error(
-                    &format!("Failed to get input for variable '{}'", var_name),
-                    &e.to_string(),
-                );
-                return false;
-            }
-        }
-    }
-
-    println!("\n{}", "Variables:".bold().cyan());
-    for (key, val) in variable_map.iter() {
-        println!("  {} {}: {}", "->".cyan(), key, val.green());
-    }
-    true
-}
 
 fn eprint_error(context: &str, err: &str) {
     eprintln!("{} {}: {}", "Error:".red().bold(), context, err);
@@ -456,68 +430,23 @@ fn display_name(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-fn resolve_variable_input(
-    input: &str,
-    default_value: Option<String>,
-) -> Result<String, &'static str> {
-    let input = input.trim();
-
-    if input.is_empty() {
-        default_value.ok_or("a value is required")
-    } else {
-        Ok(input.to_string())
-    }
-}
-
-fn overwrite_strategy(cli: &Cli) -> generator::OverwriteStrategy {
+fn overwrite_strategy(cli: &Cli) -> overwrite::OverwriteStrategy {
     if cli.force {
-        generator::OverwriteStrategy::Force
+        overwrite::OverwriteStrategy::Force
     } else if cli.backup {
-        generator::OverwriteStrategy::Backup
+        overwrite::OverwriteStrategy::Backup
     } else if cli.skip {
-        generator::OverwriteStrategy::Skip
+        overwrite::OverwriteStrategy::Skip
     } else {
-        generator::OverwriteStrategy::Prompt
+        overwrite::OverwriteStrategy::Prompt
     }
 }
 
-fn run_hook(
-    name: &str,
-    hook: &str,
-    target_path: &Path,
-    variable_map: &HashMap<String, String>,
-) -> Result<(), String> {
-    let command = replace_variables(hook, variable_map);
-    let status = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(&command)
-        .current_dir(target_path)
-        .status()
-        .map_err(|e| e.to_string())?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "{} exited with status {}",
-            name,
-            status.code().unwrap_or(-1)
-        ))
-    }
-}
-
-fn replace_variables(input: &str, variable_map: &HashMap<String, String>) -> String {
-    let mut resolved = input.to_string();
-    for (key, val) in variable_map {
-        let target = format!("{{{{ {} }}}}", key);
-        resolved = resolved.replace(&target, val);
-    }
-    resolved
-}
+// hooks moved to src/hooks.rs
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_variable_input;
+    use crate::vars::resolve_variable_input;
 
     #[test]
     fn resolve_variable_input_rejects_blank_without_default() {
