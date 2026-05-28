@@ -1,84 +1,17 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use std::collections::HashMap;
 use std::fs::File;
+use std::io::{self, Write};
 use std::path::Path;
 
+mod args;
+mod generator;
 mod template;
 
+use args::{Cli, Commands};
+use template::Template;
+
 const DEFAULT_YAML: &str = include_str!("./default.yaml");
-
-#[derive(Parser)]
-#[command(
-    name = "cx",
-    version = "0.1.0",
-    author = "suzuuuuu09",
-    about = "A tool to generate a directory structure from a TOML template."
-)]
-struct Cli {
-    // サブコマンドを定義する
-    #[command(subcommand)]
-    command: Option<Commands>,
-
-    // サブコマンドが定義されていなかったら第一引数をテンプレート名として扱う
-    #[arg(help = "Name of the template to generate")]
-    template: Option<String>,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    Init {
-        #[arg(short, long, default_value = "cx.toml")]
-        template: String,
-    },
-
-    #[command(about = "Create a new template file")]
-    New { name: String },
-
-    #[command(about = "List all available templates")]
-    List,
-}
-
-fn create_items(items: &[template::TemplateItem], base_path: &Path) {
-    for item in items {
-        match item {
-            template::TemplateItem::Directory {
-                name,
-                items: sub_items,
-            } => {
-                let dir_path = base_path.join(name);
-                println!("Creating directory: {:?}", dir_path);
-                match std::fs::create_dir_all(&dir_path) {
-                    Ok(_) => println!("Directory '{:?}' created successfully.", dir_path),
-                    Err(e) => eprintln!("Failed to create directory '{:?}': {}", dir_path, e),
-                }
-                if let Some(inner_items) = sub_items {
-                    create_items(inner_items, &dir_path);
-                }
-            }
-            template::TemplateItem::File { name, content } => {
-                let file_path = base_path.join(name);
-                println!("Creating file: {:?}", file_path);
-                match File::create(&file_path) {
-                    Ok(mut file) => {
-                        use std::io::Write;
-                        if let Some(content) = content {
-                            if let Err(e) = file.write_all(content.as_bytes()) {
-                                eprintln!("Failed to write to file '{:?}': {}", file_path, e);
-                            } else {
-                                println!("File '{:?}' created successfully.", file_path);
-                            }
-                        } else {
-                            println!(
-                                "File '{:?}' created successfully (empty content).",
-                                file_path
-                            );
-                        }
-                    }
-                    Err(e) => eprintln!("Failed to create file '{:?}': {}", file_path, e),
-                }
-            }
-        }
-    }
-}
 
 fn main() {
     // コマンドライン引数を解析する
@@ -121,15 +54,40 @@ fn main() {
         match std::fs::read_to_string(&filename) {
             Ok(content) => {
                 println!("{}", content);
-                match serde_yaml::from_str::<template::Template>(&content) {
+                match serde_yaml::from_str::<Template>(&content) {
                     Ok(template) => {
                         println!("Template Name: {}", template.name);
                         println!("Description: {}", template.description);
+
+                        let mut variable_map = HashMap::new();
+
+                        for var in &cli.vars {
+                            if let Some((key, value)) = var.split_once('=') {
+                                variable_map
+                                    .insert(key.trim().to_string(), value.trim().to_string());
+                            }
+                        }
+
                         if let Some(variables) = template.variables {
-                            println!("Variables: {:?}", variables);
+                            println!("Variables:");
+                            for var in variables {
+                                if variable_map.contains_key(&var) {
+                                    println!("  {}: {}", var, variable_map[&var]);
+                                    continue;
+                                }
+                                println!("  Enter value for {}: ", var);
+                                io::stdout().flush().unwrap();
+
+                                let mut input = String::new();
+                                // ユーザーからの入力を受け取る
+                                io::stdin().read_line(&mut input).unwrap();
+                                let value = input.trim().to_string();
+
+                                variable_map.insert(var.clone(), value);
+                            }
                         }
                         println!("Items:");
-                        create_items(&template.items, Path::new("."));
+                        generator::create_items(&template.items, Path::new("."), &variable_map);
                     }
                     Err(e) => eprintln!("Failed to parse template file '{}': {}", filename, e),
                 }
