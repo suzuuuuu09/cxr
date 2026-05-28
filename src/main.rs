@@ -27,13 +27,6 @@ fn main() {
 
     if let Some(cmd) = &cli.command {
         match cmd {
-            Commands::Init { template } => {
-                // ファイルを作成する
-                match File::create(template) {
-                    Ok(_) => println!("File '{}' created successfully.", template),
-                    Err(e) => eprintln!("Failed to create file '{}': {}", template, e),
-                }
-            }
             Commands::New { name } => {
                 let config_dir = match get_config_dir() {
                     Some(path) => path,
@@ -63,7 +56,22 @@ fn main() {
             Commands::List => {
                 // テンプレートの一覧を表示する
                 println!("Available templates:");
-                // TODO: ここでテンプレートの一覧を取得して表示する処理を実装する
+                // 設定ディレクトリを取得
+                if let Some(config_dir) = get_config_dir() {
+                    // ディレクトリ内のファイルを読み込む
+                    if let Ok(entries) = std::fs::read_dir(config_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            // 拡張子が "yaml" のファイルだけを対象にする
+                            if path.extension().is_some_and(|ext| ext == "yaml") {
+                                // ファイル名（拡張子なし）を綺麗に表示
+                                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                                    println!("  - {}", stem);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

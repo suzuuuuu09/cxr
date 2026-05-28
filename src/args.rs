@@ -22,11 +22,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Init {
-        #[arg(short, long, default_value = "cx.toml")]
-        template: String,
-    },
-
     #[command(about = "Create a new template file")]
     New { name: String },
 
