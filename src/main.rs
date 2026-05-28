@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
-use serde::{Deserialize, Serialize};
 use std::fs::File;
+use std::path::Path;
+
+mod template;
 
 const DEFAULT_YAML: &str = include_str!("./default.yaml");
 
@@ -35,24 +37,47 @@ enum Commands {
     List,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Template {
-    name: String,
-    description: String,
-    variables: Option<Vec<String>>,
-    items: Vec<TemplateItem>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum TemplateItem {
-    Directory {
-        name: String,
-    },
-    File {
-        name: String,
-        content: Option<String>,
-    },
+fn create_items(items: &[template::TemplateItem], base_path: &Path) {
+    for item in items {
+        match item {
+            template::TemplateItem::Directory {
+                name,
+                items: sub_items,
+            } => {
+                let dir_path = base_path.join(name);
+                println!("Creating directory: {:?}", dir_path);
+                match std::fs::create_dir_all(&dir_path) {
+                    Ok(_) => println!("Directory '{:?}' created successfully.", dir_path),
+                    Err(e) => eprintln!("Failed to create directory '{:?}': {}", dir_path, e),
+                }
+                if let Some(inner_items) = sub_items {
+                    create_items(inner_items, &dir_path);
+                }
+            }
+            template::TemplateItem::File { name, content } => {
+                let file_path = base_path.join(name);
+                println!("Creating file: {:?}", file_path);
+                match File::create(&file_path) {
+                    Ok(mut file) => {
+                        use std::io::Write;
+                        if let Some(content) = content {
+                            if let Err(e) = file.write_all(content.as_bytes()) {
+                                eprintln!("Failed to write to file '{:?}': {}", file_path, e);
+                            } else {
+                                println!("File '{:?}' created successfully.", file_path);
+                            }
+                        } else {
+                            println!(
+                                "File '{:?}' created successfully (empty content).",
+                                file_path
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to create file '{:?}': {}", file_path, e),
+                }
+            }
+        }
+    }
 }
 
 fn main() {
@@ -91,12 +116,12 @@ fn main() {
         }
     }
 
-    if let Some(template) = cli.template {
-        let filename = format!("{}.yaml", template);
+    if let Some(template_arg) = cli.template {
+        let filename = format!("{}.yaml", template_arg);
         match std::fs::read_to_string(&filename) {
             Ok(content) => {
                 println!("{}", content);
-                match serde_yaml::from_str::<Template>(&content) {
+                match serde_yaml::from_str::<template::Template>(&content) {
                     Ok(template) => {
                         println!("Template Name: {}", template.name);
                         println!("Description: {}", template.description);
@@ -104,19 +129,7 @@ fn main() {
                             println!("Variables: {:?}", variables);
                         }
                         println!("Items:");
-                        for item in template.items {
-                            match item {
-                                TemplateItem::Directory { name } => {
-                                    println!("  - Directory: {}", name);
-                                }
-                                TemplateItem::File { name, content } => {
-                                    println!("  - File: {}", name);
-                                    if let Some(content) = content {
-                                        println!("    Content: {}", content);
-                                    }
-                                }
-                            }
-                        }
+                        create_items(&template.items, Path::new("."));
                     }
                     Err(e) => eprintln!("Failed to parse template file '{}': {}", filename, e),
                 }
