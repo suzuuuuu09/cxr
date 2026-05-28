@@ -26,6 +26,22 @@ pub struct Cli {
         help = "Output directory (default: current directory)"
     )]
     pub output: Option<String>,
+
+    #[arg(
+        short = 'n',
+        long = "dry-run",
+        help = "Preview generated items without writing files"
+    )]
+    pub dry_run: bool,
+
+    #[arg(long = "force", conflicts_with_all = ["backup", "skip"], help = "Overwrite existing files without prompting")]
+    pub force: bool,
+
+    #[arg(long = "backup", conflicts_with_all = ["force", "skip"], help = "Backup existing files to .bak before writing")]
+    pub backup: bool,
+
+    #[arg(long = "skip", conflicts_with_all = ["force", "backup"], help = "Skip existing files without prompting")]
+    pub skip: bool,
 }
 
 #[derive(Subcommand)]
@@ -35,6 +51,9 @@ pub enum Commands {
 
     #[command(about = "Remove a template file", alias = "delete")]
     Remove { name: String },
+
+    #[command(about = "Select a template with fzf and generate")]
+    Fzf,
 
     #[command(about = "List all available templates")]
     List,

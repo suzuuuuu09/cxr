@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 mod args;
 mod generator;
@@ -15,6 +16,12 @@ use template::{Template, Variable};
 
 const DEFAULT_YAML: &str = include_str!("./default.yaml");
 
+struct TemplateInfo {
+    stem: String,
+    name: String,
+    description: String,
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -23,6 +30,7 @@ fn main() {
         match cmd {
             Commands::New { name } => handle_new_command(name),
             Commands::Remove { name } => handle_remove_command(name),
+            Commands::Fzf => handle_fzf_command(&cli),
             Commands::List => handle_list_command(),
         }
     }
@@ -173,41 +181,124 @@ fn handle_list_command() {
         None => return,
     };
 
-    if let Ok(entries) = std::fs::read_dir(config_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if Path::extension(&path).and_then(|ext| ext.to_str()) != Some("yaml") {
-                continue;
-            }
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                let (name, desc) = std::fs::read_to_string(&path)
-                    .ok()
-                    .and_then(|content| serde_yaml::from_str::<serde_yaml::Value>(&content).ok())
-                    .map(|yaml| {
-                        let n = yaml.get("name").and_then(|v| v.as_str()).unwrap_or(stem);
-                        let d = yaml
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("(No description provided)");
-                        (n.to_string(), d.to_string())
-                    })
-                    .unwrap_or_else(|| {
-                        (
-                            stem.to_string(),
-                            "(Failed to read metadata)".dimmed().to_string(),
-                        )
-                    });
+    for template in load_templates(&config_dir) {
+        println!(
+            "  {} {:<12} -> {} ({})",
+            "-".cyan(),
+            template.stem.green().bold(),
+            template.name,
+            template.description.dimmed()
+        );
+    }
+}
 
-                println!(
-                    "  {} {:<12} -> {} ({})",
-                    "-".cyan(),
-                    stem.green().bold(),
-                    name,
-                    desc.dimmed()
-                );
-            }
+/// `cx fzf` コマンドの処理
+fn handle_fzf_command(cli: &Cli) {
+    let config_dir = match get_config_dir() {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "{} Failed to find configuration directory.",
+                "Error:".red().bold()
+            );
+            return;
+        }
+    };
+
+    let templates = load_templates(&config_dir);
+    if templates.is_empty() {
+        eprint_error(
+            "No templates found.",
+            "place a template under the config directory",
+        );
+        return;
+    }
+
+    let selected = match select_template_with_fzf(&templates) {
+        Ok(name) => name,
+        Err(err) => {
+            eprint_error("Failed to select a template with fzf", &err);
+            return;
+        }
+    };
+
+    handle_generate_command(&selected, cli);
+}
+
+fn load_templates(config_dir: &Path) -> Vec<TemplateInfo> {
+    let mut templates = Vec::new();
+
+    let Ok(entries) = std::fs::read_dir(config_dir) else {
+        return templates;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if Path::extension(&path).and_then(|ext| ext.to_str()) != Some("yaml") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+
+        let (name, desc) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|content| serde_yaml::from_str::<serde_yaml::Value>(&content).ok())
+            .map(|yaml| {
+                let n = yaml.get("name").and_then(|v| v.as_str()).unwrap_or(stem);
+                let d = yaml
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(No description provided)");
+                (n.to_string(), d.to_string())
+            })
+            .unwrap_or_else(|| (stem.to_string(), "(Failed to read metadata)".to_string()));
+
+        templates.push(TemplateInfo {
+            stem: stem.to_string(),
+            name,
+            description: desc,
+        });
+    }
+
+    templates
+}
+
+fn select_template_with_fzf(templates: &[TemplateInfo]) -> Result<String, String> {
+    let mut child = Command::new("fzf")
+        .arg("--prompt=Template> ")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "Failed to open fzf stdin".to_string())?;
+        for template in templates {
+            writeln!(
+                stdin,
+                "{}\t{}\t{}",
+                template.stem, template.name, template.description
+            )
+            .map_err(|e| e.to_string())?;
         }
     }
+
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err("fzf was cancelled or exited with an error".to_string());
+    }
+
+    let selection = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if selection.is_empty() {
+        return Err("No template was selected".to_string());
+    }
+
+    let stem = selection.split('\t').next().unwrap_or(&selection);
+    Ok(stem.to_string())
 }
 
 /// テンプレート名が指定された場合の生成処理
@@ -264,12 +355,22 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
         }
     }
 
+    if cli.dry_run {
+        println!("{}", "Dry run: no files will be written.".yellow().dimmed());
+    }
     println!("\n{}", "Generating items...".bold().dimmed());
     let target_dir = cli.output.as_deref().unwrap_or(".");
     let target_path = Path::new(target_dir);
 
+    let overwrite = overwrite_strategy(cli);
     std::fs::create_dir_all(target_path).unwrap();
-    generator::create_items(&template.items, target_path, &variable_map);
+    generator::create_items(
+        &template.items,
+        target_path,
+        &variable_map,
+        cli.dry_run,
+        overwrite,
+    );
     println!("{}", "\nDone!".green().bold());
 }
 
@@ -343,6 +444,18 @@ fn resolve_variable_input(
         default_value.ok_or("a value is required")
     } else {
         Ok(input.to_string())
+    }
+}
+
+fn overwrite_strategy(cli: &Cli) -> generator::OverwriteStrategy {
+    if cli.force {
+        generator::OverwriteStrategy::Force
+    } else if cli.backup {
+        generator::OverwriteStrategy::Backup
+    } else if cli.skip {
+        generator::OverwriteStrategy::Skip
+    } else {
+        generator::OverwriteStrategy::Prompt
     }
 }
 
