@@ -9,14 +9,26 @@ pub fn run_hook(
     hook: &str,
     target_path: &Path,
     variable_map: &HashMap<String, String>,
+    template_name: &str,
+    template_description: &str,
 ) -> Result<(), String> {
-    let command = replace_variables(hook, variable_map);
-    let status = Command::new("/bin/sh")
+    let rendered_hook = replace_variables(hook, variable_map);
+    let mut command = Command::new("/bin/sh");
+    command
         .arg("-c")
-        .arg(&command)
+        .arg(&rendered_hook)
         .current_dir(target_path)
-        .status()
-        .map_err(|e| e.to_string())?;
+        .env("CX_OUTPUT_DIR", target_path)
+        .env("CX_TEMPLATE_NAME", template_name)
+        .env("CX_TEMPLATE_DESCRIPTION", template_description);
+
+    for (key, value) in variable_map {
+        if is_valid_env_key(key) {
+            command.env(key, value);
+        }
+    }
+
+    let status = command.status().map_err(|e| e.to_string())?;
 
     if status.success() {
         Ok(())
@@ -37,6 +49,16 @@ pub fn replace_variables(input: &str, variable_map: &HashMap<String, String>) ->
         resolved = resolved.replace(&target, val);
     }
     resolved
+}
+
+fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 #[cfg(test)]

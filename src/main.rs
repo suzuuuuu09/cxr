@@ -16,7 +16,7 @@ mod overwrite;
 mod template;
 
 use args::{Cli, Commands};
-use template::Template;
+use template::{Template, load_template, template_name_matches};
 mod vars_file;
 
 const DEFAULT_YAML: &str = include_str!("./default.yaml");
@@ -25,6 +25,8 @@ struct TemplateInfo {
     stem: String,
     name: String,
     description: String,
+    tags: Vec<String>,
+    raw: Template,
 }
 
 fn main() {
@@ -36,7 +38,9 @@ fn main() {
             Commands::New { name } => handle_new_command(name),
             Commands::Remove { name } => handle_remove_command(name),
             Commands::Fzf => handle_fzf_command(&cli),
-            Commands::List => handle_list_command(),
+            Commands::List { tag, search } => {
+                handle_list_command(tag.as_deref(), search.as_deref())
+            }
             Commands::Lint { name, all } => handle_lint_command(name.as_deref(), *all),
         }
     }
@@ -68,7 +72,16 @@ fn handle_new_command(name: &str) {
         }
     };
 
-    std::fs::create_dir_all(&config_dir).unwrap();
+    if let Err(e) = std::fs::create_dir_all(&config_dir) {
+        eprint_error(
+            &format!(
+                "Failed to prepare configuration directory '{}'",
+                display_name(&config_dir)
+            ),
+            &e.to_string(),
+        );
+        return;
+    }
     let filename = config_dir.join(format!("{}.yaml", name));
 
     // すでに同名のテンプレートファイルが存在する場合は上書きの確認をする
@@ -179,7 +192,7 @@ fn handle_remove_command(name: &str) {
 }
 
 /// `cx list` コマンドの処理
-fn handle_list_command() {
+fn handle_list_command(tag: Option<&str>, search: Option<&str>) {
     println!("{}", "Available templates:".bold().cyan());
 
     let config_dir = match get_config_dir() {
@@ -187,13 +200,35 @@ fn handle_list_command() {
         None => return,
     };
 
-    for template in load_templates(&config_dir) {
+    for template in load_templates(&config_dir)
+        .into_iter()
+        .filter(|template| {
+            tag.map(|needle| {
+                template
+                    .tags
+                    .iter()
+                    .any(|value| value.eq_ignore_ascii_case(needle))
+            })
+            .unwrap_or(true)
+        })
+        .filter(|template| {
+            search
+                .map(|query| template_name_matches(&template.raw, query))
+                .unwrap_or(true)
+        })
+    {
+        let tag_display = if template.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", template.tags.join(", "))
+        };
         println!(
-            "  {} {:<12} -> {} ({})",
+            "  {} {:<12} -> {} ({}){}",
             "-".cyan(),
             template.stem.green().bold(),
             template.name,
-            template.description.dimmed()
+            template.description.dimmed(),
+            tag_display
         );
     }
 }
@@ -211,7 +246,7 @@ fn handle_lint_command(name: Option<&str>, all: bool) {
         }
     };
 
-    let template_paths = if all {
+    let template_names = if all {
         let paths = list_template_files(&config_dir);
         if paths.is_empty() {
             eprint_error(
@@ -240,21 +275,29 @@ fn handle_lint_command(name: Option<&str>, all: bool) {
     };
 
     let mut total_errors = 0;
-    for path in template_paths {
-        let report = lint::lint_template_file(&path);
-        if report.errors.is_empty() {
-            println!("  {} {}", "OK:".green().bold(), display_name(&path));
+    for path in template_names {
+        let Some(template_name) = path.file_stem().and_then(|name| name.to_str()) else {
             continue;
-        }
+        };
+        match load_template(&config_dir, template_name) {
+            Ok(template) => {
+                let report = lint::lint_template(&template);
+                if report.is_empty() {
+                    println!("  {} {}", "OK:".green().bold(), display_name(&path));
+                    continue;
+                }
 
-        total_errors += report.errors.len();
-        eprintln!(
-            "{} {}",
-            "Lint errors in".red().bold(),
-            display_name(&path)
-        );
-        for err in report.errors {
-            eprintln!("  - {}", err);
+                total_errors += report.len();
+                eprintln!("{} {}", "Lint errors in".red().bold(), display_name(&path));
+                for err in report {
+                    eprintln!("  - {}", err);
+                }
+            }
+            Err(err) => {
+                total_errors += 1;
+                eprintln!("{} {}", "Lint errors in".red().bold(), display_name(&path));
+                eprintln!("  - {}", err);
+            }
         }
     }
 
@@ -319,23 +362,20 @@ fn load_templates(config_dir: &Path) -> Vec<TemplateInfo> {
             continue;
         };
 
-        let (name, desc) = std::fs::read_to_string(&path)
+        let raw = match std::fs::read_to_string(&path)
             .ok()
-            .and_then(|content| serde_yaml::from_str::<serde_yaml::Value>(&content).ok())
-            .map(|yaml| {
-                let n = yaml.get("name").and_then(|v| v.as_str()).unwrap_or(stem);
-                let d = yaml
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("(No description provided)");
-                (n.to_string(), d.to_string())
-            })
-            .unwrap_or_else(|| (stem.to_string(), "(Failed to read metadata)".to_string()));
+            .and_then(|content| serde_yaml::from_str::<Template>(&content).ok())
+        {
+            Some(template) => template,
+            None => continue,
+        };
 
         templates.push(TemplateInfo {
             stem: stem.to_string(),
-            name,
-            description: desc,
+            name: raw.name.clone(),
+            description: raw.description.clone(),
+            tags: raw.tags.clone().unwrap_or_default(),
+            raw,
         });
     }
 
@@ -376,8 +416,11 @@ fn select_template_with_fzf(templates: &[TemplateInfo]) -> Result<String, String
         for template in templates {
             writeln!(
                 stdin,
-                "{}\t{}\t{}",
-                template.stem, template.name, template.description
+                "{}\t{}\t{}\t{}",
+                template.stem,
+                template.name,
+                template.description,
+                template.tags.join(", ")
             )
             .map_err(|e| e.to_string())?;
         }
@@ -411,23 +454,12 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
     };
 
     let template_file_path = config_dir.join(format!("{}.yaml", template_arg));
-    let content = match std::fs::read_to_string(&template_file_path) {
-        Ok(c) => c,
+    let template = match load_template(&config_dir, template_arg) {
+        Ok(template) => template,
         Err(e) => {
             eprint_error(
-                &format!("Failed to read template file '{:?}'", template_file_path),
-                &e.to_string(),
-            );
-            return;
-        }
-    };
-
-    let template = match serde_yaml::from_str::<Template>(&content) {
-        Ok(t) => t,
-        Err(e) => {
-            eprint_error(
-                &format!("Failed to parse template file '{:?}'", template_file_path),
-                &e.to_string(),
+                &format!("Failed to load template file '{:?}'", template_file_path),
+                &e,
             );
             return;
         }
@@ -440,9 +472,13 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
     let mut variable_map = HashMap::new();
 
     // CLI vars (highest precedence)
-    for var in &cli.vars {
-        if let Some((key, value)) = var.split_once('=') {
-            variable_map.insert(key.trim().to_string(), value.trim().to_string());
+    match vars::parse_cli_vars(&cli.vars) {
+        Ok(map) => {
+            variable_map.extend(map);
+        }
+        Err(e) => {
+            eprint_error("Failed to parse -v values", &e);
+            return;
         }
     }
 
@@ -472,7 +508,17 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
     let target_dir = cli.output.as_deref().unwrap_or(".");
     let target_path = Path::new(target_dir);
 
-    std::fs::create_dir_all(target_path).unwrap();
+    if let Err(e) = prepare_output_dir(target_path, cli.dry_run) {
+        eprint_error(
+            &format!(
+                "Failed to prepare output directory '{}'",
+                target_path.display()
+            ),
+            &e,
+        );
+        return;
+    }
+
     if cli.dry_run {
         println!("{}", "Dry run: no files will be written.".yellow().dimmed());
     }
@@ -483,7 +529,14 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
             "Dry run: hooks will not be executed.".yellow().dimmed()
         );
     } else if let Some(hook) = template.pre_hook.as_deref() {
-        if let Err(err) = hooks::run_hook("pre_hook", hook, target_path, &variable_map) {
+        if let Err(err) = hooks::run_hook(
+            "pre_hook",
+            hook,
+            target_path,
+            &variable_map,
+            &template.name,
+            &template.description,
+        ) {
             eprint_error("Failed to run pre_hook", &err);
             std::process::exit(1);
         }
@@ -501,7 +554,14 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
 
     if !cli.dry_run {
         if let Some(hook) = template.post_hook.as_deref() {
-            if let Err(err) = hooks::run_hook("post_hook", hook, target_path, &variable_map) {
+            if let Err(err) = hooks::run_hook(
+                "post_hook",
+                hook,
+                target_path,
+                &variable_map,
+                &template.name,
+                &template.description,
+            ) {
                 eprint_error("Failed to run post_hook", &err);
                 std::process::exit(1);
             }
@@ -509,7 +569,6 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
     }
     println!("{}", "\nDone!".green().bold());
 }
-
 
 fn eprint_error(context: &str, err: &str) {
     eprintln!("{} {}: {}", "Error:".red().bold(), context, err);
@@ -534,11 +593,22 @@ fn overwrite_strategy(cli: &Cli) -> overwrite::OverwriteStrategy {
     }
 }
 
+fn prepare_output_dir(target_path: &Path, dry_run: bool) -> Result<(), String> {
+    if dry_run {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(target_path).map_err(|e| e.to_string())
+}
+
 // hooks moved to src/hooks.rs
 
 #[cfg(test)]
 mod tests {
+    use super::prepare_output_dir;
     use crate::vars::resolve_variable_input;
+    use std::env::temp_dir;
+    use std::fs;
 
     #[test]
     fn resolve_variable_input_rejects_blank_without_default() {
@@ -556,5 +626,16 @@ mod tests {
     #[test]
     fn resolve_variable_input_trims_non_blank_input() {
         assert_eq!(resolve_variable_input("  value  ", None).unwrap(), "value");
+    }
+
+    #[test]
+    fn prepare_output_dir_skips_creation_on_dry_run() {
+        let mut path = temp_dir();
+        path.push("cx_test_dry_run_output");
+        fs::remove_dir_all(&path).ok();
+
+        prepare_output_dir(&path, true).unwrap();
+
+        assert!(!path.exists());
     }
 }

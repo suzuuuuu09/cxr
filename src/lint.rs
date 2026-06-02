@@ -1,6 +1,6 @@
 use crate::template::{Template, TemplateItem, Variable};
 use serde_yaml::{Mapping, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -38,7 +38,7 @@ pub fn lint_template_file(path: &Path) -> LintReport {
     LintReport { errors }
 }
 
-fn lint_template(template: &Template) -> Vec<String> {
+pub fn lint_template(template: &Template) -> Vec<String> {
     let mut errors = Vec::new();
 
     check_non_empty("name", &template.name, &mut errors);
@@ -52,15 +52,26 @@ fn lint_template(template: &Template) -> Vec<String> {
                 }
                 Variable::WithDefault(map) => {
                     if map.len() != 1 {
-                        errors.push(format!(
-                            "variables[{}] must contain exactly one key",
-                            idx
-                        ));
+                        errors.push(format!("variables[{}] must contain exactly one key", idx));
                     }
                     for name in map.keys() {
                         check_non_empty(&format!("variables[{}]", idx), name, &mut errors);
                     }
                 }
+            }
+        }
+    }
+
+    if let Some(tags) = template.tags.as_ref() {
+        let mut seen = HashSet::new();
+        for (idx, tag) in tags.iter().enumerate() {
+            let trimmed = tag.trim();
+            if trimmed.is_empty() {
+                errors.push(format!("tags[{}] must not be empty", idx));
+                continue;
+            }
+            if !seen.insert(trimmed.to_lowercase()) {
+                errors.push(format!("tags[{}] is duplicated", idx));
             }
         }
     }
@@ -73,14 +84,20 @@ fn lint_items(items: &[TemplateItem], path: &str, errors: &mut Vec<String>) {
     for (idx, item) in items.iter().enumerate() {
         let item_path = format!("{}[{}]", path, idx);
         match item {
-            TemplateItem::Directory { name, items } => {
+            TemplateItem::Directory { name, items, when } => {
                 check_non_empty(&format!("{}.name", item_path), name, errors);
+                if let Some(condition) = when.as_ref() {
+                    check_condition(&format!("{}.when", item_path), condition, errors);
+                }
                 if let Some(inner) = items.as_ref() {
                     lint_items(inner, &format!("{}.items", item_path), errors);
                 }
             }
-            TemplateItem::File { name, .. } => {
+            TemplateItem::File { name, when, .. } => {
                 check_non_empty(&format!("{}.name", item_path), name, errors);
+                if let Some(condition) = when.as_ref() {
+                    check_condition(&format!("{}.when", item_path), condition, errors);
+                }
             }
         }
     }
@@ -105,6 +122,8 @@ fn lint_yaml_template(value: &Value, errors: &mut Vec<String>) -> HashSet<String
         "variables",
         "pre_hook",
         "post_hook",
+        "tags",
+        "extends",
         "items",
     ]
     .into_iter()
@@ -155,6 +174,21 @@ fn lint_yaml_template(value: &Value, errors: &mut Vec<String>) -> HashSet<String
         }
     }
 
+    if let Some(tags_val) = map.get(&Value::from("tags")) {
+        match tags_val {
+            Value::Sequence(seq) => lint_tags(seq, errors),
+            _ => errors.push("tags must be a list".to_string()),
+        }
+    }
+
+    if let Some(extends_val) = map.get(&Value::from("extends")) {
+        if !matches!(extends_val, Value::String(_)) && !extends_val.is_null() {
+            errors.push("extends must be a string".to_string());
+        } else if let Some(parent) = extends_val.as_str() {
+            check_non_empty("extends", parent, errors);
+        }
+    }
+
     match map.get(&Value::from("items")) {
         Some(Value::Sequence(items)) => lint_items_value(items, "items", errors),
         Some(_) => errors.push("items must be a list".to_string()),
@@ -176,10 +210,7 @@ fn lint_variables(seq: &[Value], errors: &mut Vec<String>, variables: &mut HashS
             }
             Value::Mapping(map) => {
                 if map.len() != 1 {
-                    errors.push(format!(
-                        "variables[{}] must contain exactly one key",
-                        idx
-                    ));
+                    errors.push(format!("variables[{}] must contain exactly one key", idx));
                 }
                 for (key, value) in map {
                     let Some(name) = key.as_str() else {
@@ -192,14 +223,28 @@ fn lint_variables(seq: &[Value], errors: &mut Vec<String>, variables: &mut HashS
                         errors.push(format!("variables[{}] is duplicated", idx));
                     }
                     if !matches!(value, Value::String(_)) {
-                        errors.push(format!(
-                            "variables[{}] default value must be a string",
-                            idx
-                        ));
+                        errors.push(format!("variables[{}] default value must be a string", idx));
                     }
                 }
             }
             _ => errors.push(format!("variables[{}] must be a string or map", idx)),
+        }
+    }
+}
+
+fn lint_tags(seq: &[Value], errors: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    for (idx, item) in seq.iter().enumerate() {
+        match item {
+            Value::String(tag) => {
+                let trimmed = tag.trim();
+                if trimmed.is_empty() {
+                    errors.push(format!("tags[{}] must not be empty", idx));
+                } else if !seen.insert(trimmed.to_lowercase()) {
+                    errors.push(format!("tags[{}] is duplicated", idx));
+                }
+            }
+            _ => errors.push(format!("tags[{}] must be a string", idx)),
         }
     }
 }
@@ -279,6 +324,14 @@ fn lint_file_item(map: &Mapping, path: &str, errors: &mut Vec<String>) {
             errors.push(format!("{}.content must be a string", path));
         }
     }
+
+    if let Some(condition) = map.get(&Value::from("when")) {
+        match condition {
+            Value::String(value) => check_condition(&format!("{}.when", path), value, errors),
+            _ if !condition.is_null() => errors.push(format!("{}.when must be a string", path)),
+            _ => {}
+        }
+    }
 }
 
 fn lint_placeholders(value: &Value, variables: &HashSet<String>, errors: &mut Vec<String>) {
@@ -315,11 +368,31 @@ fn lint_item_placeholders(
             check_placeholders(&format!("{}.name", item_path), name, variables, errors);
         }
         if let Some(Value::String(content)) = map.get(&Value::from("content")) {
-            check_placeholders(&format!("{}.content", item_path), content, variables, errors);
+            check_placeholders(
+                &format!("{}.content", item_path),
+                content,
+                variables,
+                errors,
+            );
+        }
+        if let Some(Value::String(condition)) = map.get(&Value::from("when")) {
+            check_placeholders(&format!("{}.when", item_path), condition, variables, errors);
         }
         if let Some(Value::Sequence(inner)) = map.get(&Value::from("items")) {
             lint_item_placeholders(inner, &format!("{}.items", item_path), variables, errors);
         }
+    }
+}
+
+fn check_condition(path: &str, condition: &str, errors: &mut Vec<String>) {
+    if condition.trim().is_empty() {
+        errors.push(format!("{} must not be empty", path));
+        return;
+    }
+
+    let dummy: HashMap<String, String> = HashMap::new();
+    if let Err(err) = crate::template::should_render_item(&Some(condition.to_string()), &dummy) {
+        errors.push(format!("{}: {}", path, err));
     }
 }
 
@@ -331,7 +404,10 @@ fn check_placeholders(
 ) {
     for var in extract_placeholders(input) {
         if !variables.contains(&var) {
-            errors.push(format!("undefined variable '{}' referenced in {}", var, path));
+            errors.push(format!(
+                "undefined variable '{}' referenced in {}",
+                var, path
+            ));
         }
     }
 }
@@ -369,6 +445,8 @@ mod tests {
             variables: None,
             pre_hook: None,
             post_hook: None,
+            tags: None,
+            extends: None,
             items: vec![],
         };
         let errors = lint_template(&template);
@@ -386,12 +464,16 @@ mod tests {
             variables: Some(vec![Variable::WithDefault(map)]),
             pre_hook: None,
             post_hook: None,
+            tags: None,
+            extends: None,
             items: vec![],
         };
         let errors = lint_template(&template);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("must contain exactly one key")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("must contain exactly one key"))
+        );
     }
 
     #[test]
@@ -402,9 +484,12 @@ mod tests {
             variables: None,
             pre_hook: None,
             post_hook: None,
+            tags: None,
+            extends: None,
             items: vec![TemplateItem::File {
                 name: "  ".to_string(),
                 content: None,
+                when: None,
             }],
         };
         let errors = lint_template(&template);
@@ -425,10 +510,12 @@ items: []
         fs::write(&path, yaml).unwrap();
         let report = lint_template_file(&path);
         fs::remove_file(&path).ok();
-        assert!(report
-            .errors
-            .iter()
-            .any(|e| e.contains("unknown field 'varables'")));
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("unknown field 'varables'"))
+        );
     }
 
     #[test]
@@ -446,10 +533,7 @@ items: []
         fs::write(&path, yaml).unwrap();
         let report = lint_template_file(&path);
         fs::remove_file(&path).ok();
-        assert!(report
-            .errors
-            .iter()
-            .any(|e| e.contains("project_nmae")));
+        assert!(report.errors.iter().any(|e| e.contains("project_nmae")));
     }
 
     #[test]

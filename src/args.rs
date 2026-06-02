@@ -56,7 +56,16 @@ pub enum Commands {
     Fzf,
 
     #[command(about = "List all available templates")]
-    List,
+    List {
+        #[arg(long = "tag", help = "Filter templates by tag")]
+        tag: Option<String>,
+
+        #[arg(
+            long = "search",
+            help = "Filter templates by name, description, or tags"
+        )]
+        search: Option<String>,
+    },
 
     #[command(about = "Lint template files")]
     Lint {
