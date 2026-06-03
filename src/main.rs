@@ -200,7 +200,7 @@ fn handle_list_command(tag: Option<&str>, search: Option<&str>) {
         None => return,
     };
 
-    for template in load_templates(&config_dir)
+    let templates: Vec<_> = load_templates(&config_dir)
         .into_iter()
         .filter(|template| {
             tag.map(|needle| {
@@ -216,19 +216,28 @@ fn handle_list_command(tag: Option<&str>, search: Option<&str>) {
                 .map(|query| template_name_matches(&template.raw, query))
                 .unwrap_or(true)
         })
-    {
+        .collect();
+
+    let stem_width = templates
+        .iter()
+        .map(|template| template.stem.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    for template in templates {
         let tag_display = if template.tags.is_empty() {
             String::new()
         } else {
             format!(" [{}]", template.tags.join(", "))
         };
         println!(
-            "  {} {:<12} -> {} ({}){}",
+            "  {} {:<width$} -> {} ({}){}",
             "-".cyan(),
             template.stem.green().bold(),
             template.name,
             template.description.dimmed(),
-            tag_display
+            tag_display,
+            width = stem_width
         );
     }
 }

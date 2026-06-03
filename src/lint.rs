@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::template::{Template, TemplateItem, Variable};
 use serde_yaml::{Mapping, Value};
 use std::collections::{HashMap, HashSet};
