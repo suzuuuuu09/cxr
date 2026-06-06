@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "cx", version, author, about, arg_required_else_help = true)]
+#[command(name = "cxr", version, author, about, arg_required_else_help = true)]
 pub struct Cli {
     // サブコマンドを定義する
     #[command(subcommand)]

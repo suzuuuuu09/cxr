@@ -54,12 +54,12 @@ fn main() {
 /// XDG_CONFIG_HOME環境変数を使用して設定ディレクトリを取得する関数
 fn get_config_dir() -> Option<PathBuf> {
     match std::env::var("XDG_CONFIG_HOME") {
-        Ok(val) => Some(Path::new(&val).join("cx")),
-        Err(_) => dirs::home_dir().map(|path| path.join(".config").join("cx")),
+        Ok(val) => Some(Path::new(&val).join("cxr")),
+        Err(_) => dirs::home_dir().map(|path| path.join(".config").join("cxr")),
     }
 }
 
-/// `cx new <name>` コマンドの処理
+/// `cxr new <name>` コマンドの処理
 fn handle_new_command(name: &str) {
     let config_dir = match get_config_dir() {
         Some(path) => path,
@@ -132,7 +132,7 @@ fn handle_new_command(name: &str) {
     }
 }
 
-/// `cx remove <name>` コマンドの処理
+/// `cxr remove <name>` コマンドの処理
 fn handle_remove_command(name: &str) {
     let config_dir = match get_config_dir() {
         Some(path) => path,
@@ -191,7 +191,7 @@ fn handle_remove_command(name: &str) {
     }
 }
 
-/// `cx list` コマンドの処理
+/// `cxr list` コマンドの処理
 fn handle_list_command(tag: Option<&str>, search: Option<&str>) {
     println!("{}", "Available templates:".bold().cyan());
 
@@ -242,7 +242,7 @@ fn handle_list_command(tag: Option<&str>, search: Option<&str>) {
     }
 }
 
-/// `cx lint <template>` / `cx lint --all` の処理
+/// `cxr lint <template>` / `cxr lint --all` の処理
 fn handle_lint_command(name: Option<&str>, all: bool) {
     let config_dir = match get_config_dir() {
         Some(path) => path,
@@ -270,7 +270,7 @@ fn handle_lint_command(name: Option<&str>, all: bool) {
         if !path.exists() {
             eprint_error(
                 &format!("Template file '{}' does not exist.", display_name(&path)),
-                "use `cx list` to see available templates",
+                "use `cxr list` to see available templates",
             );
             std::process::exit(1);
         }
@@ -278,7 +278,7 @@ fn handle_lint_command(name: Option<&str>, all: bool) {
     } else {
         eprint_error(
             "Missing template name.",
-            "use `cx lint <template>` or `cx lint --all`",
+            "use `cxr lint <template>` or `cxr lint --all`",
         );
         std::process::exit(2);
     };
@@ -322,7 +322,7 @@ fn handle_lint_command(name: Option<&str>, all: bool) {
     println!("{} lint passed.", "Success:".green().bold());
 }
 
-/// `cx fzf` コマンドの処理
+/// `cxr fzf` コマンドの処理
 fn handle_fzf_command(cli: &Cli) {
     let config_dir = match get_config_dir() {
         Some(path) => path,
