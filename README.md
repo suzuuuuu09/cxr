@@ -12,8 +12,24 @@
 
 ## Install
 
+### Cargo
+
 ```bash
 cargo install cxr
+```
+
+### Homebrew
+
+```bash
+brew tap suzuuuuuu09/homebrew-cxr
+brew install cxr
+```
+
+### Scoop
+
+```powershell
+scoop bucket add cxr https://github.com/suzuuuuu09/scoop-cxr
+scoop install cxr
 ```
 
 Homebrew tap and Scoop bucket updates are maintained in the `packaging/` helpers and in separate repositories.
