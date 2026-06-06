@@ -6,6 +6,7 @@
 /src/doc/build
 /src/etc/*.pyc
 /src/registry/target
+/dist
 rustc
 __pycache__
 .idea/

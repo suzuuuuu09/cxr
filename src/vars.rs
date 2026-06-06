@@ -77,9 +77,9 @@ pub fn collect_variables(
                 }
                 Err(err) => {
                     eprintln!(
-                        "{} {}: {}",
+                        "{} Variable '{}' cannot be empty: {}",
                         "Error:".red().bold(),
-                        format!("Variable '{}' cannot be empty", var_name),
+                        var_name,
                         err
                     );
                     return false;
@@ -92,10 +92,10 @@ pub fn collect_variables(
             }
             Err(e) => {
                 eprintln!(
-                    "{} {}: {}",
+                    "{} Failed to get input for variable '{}': {}",
                     "Error:".red().bold(),
-                    format!("Failed to get input for variable '{}'", var_name),
-                    e.to_string()
+                    var_name,
+                    e
                 );
                 return false;
             }

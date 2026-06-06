@@ -537,18 +537,18 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
             "{}",
             "Dry run: hooks will not be executed.".yellow().dimmed()
         );
-    } else if let Some(hook) = template.pre_hook.as_deref() {
-        if let Err(err) = hooks::run_hook(
+    } else if let Some(hook) = template.pre_hook.as_deref()
+        && let Err(err) = hooks::run_hook(
             "pre_hook",
             hook,
             target_path,
             &variable_map,
             &template.name,
             &template.description,
-        ) {
-            eprint_error("Failed to run pre_hook", &err);
-            std::process::exit(1);
-        }
+        )
+    {
+        eprint_error("Failed to run pre_hook", &err);
+        std::process::exit(1);
     }
     println!("\n{}", "Generating items...".bold().dimmed());
 
@@ -561,20 +561,19 @@ fn handle_generate_command(template_arg: &str, cli: &Cli) {
         overwrite,
     );
 
-    if !cli.dry_run {
-        if let Some(hook) = template.post_hook.as_deref() {
-            if let Err(err) = hooks::run_hook(
-                "post_hook",
-                hook,
-                target_path,
-                &variable_map,
-                &template.name,
-                &template.description,
-            ) {
-                eprint_error("Failed to run post_hook", &err);
-                std::process::exit(1);
-            }
-        }
+    if !cli.dry_run
+        && let Some(hook) = template.post_hook.as_deref()
+        && let Err(err) = hooks::run_hook(
+            "post_hook",
+            hook,
+            target_path,
+            &variable_map,
+            &template.name,
+            &template.description,
+        )
+    {
+        eprint_error("Failed to run post_hook", &err);
+        std::process::exit(1);
     }
     println!("{}", "\nDone!".green().bold());
 }

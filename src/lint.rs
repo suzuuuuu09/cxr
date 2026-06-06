@@ -141,49 +141,49 @@ fn lint_yaml_template(value: &Value, errors: &mut Vec<String>) -> HashSet<String
         }
     }
 
-    match map.get(&Value::from("name")) {
+    match map.get(Value::from("name")) {
         Some(Value::String(name)) => check_non_empty("name", name, errors),
         Some(_) => errors.push("name must be a string".to_string()),
         None => errors.push("name is required".to_string()),
     }
 
-    match map.get(&Value::from("description")) {
+    match map.get(Value::from("description")) {
         Some(Value::String(desc)) => check_non_empty("description", desc, errors),
         Some(_) => errors.push("description must be a string".to_string()),
         None => errors.push("description is required".to_string()),
     }
 
-    if let Some(Value::String(hook)) = map.get(&Value::from("pre_hook")) {
+    if let Some(Value::String(hook)) = map.get(Value::from("pre_hook")) {
         check_non_empty("pre_hook", hook, errors);
-    } else if let Some(value) = map.get(&Value::from("pre_hook")) {
-        if !value.is_null() {
-            errors.push("pre_hook must be a string".to_string());
-        }
+    } else if let Some(value) = map.get(Value::from("pre_hook"))
+        && !value.is_null()
+    {
+        errors.push("pre_hook must be a string".to_string());
     }
 
-    if let Some(Value::String(hook)) = map.get(&Value::from("post_hook")) {
+    if let Some(Value::String(hook)) = map.get(Value::from("post_hook")) {
         check_non_empty("post_hook", hook, errors);
-    } else if let Some(value) = map.get(&Value::from("post_hook")) {
-        if !value.is_null() {
-            errors.push("post_hook must be a string".to_string());
-        }
+    } else if let Some(value) = map.get(Value::from("post_hook"))
+        && !value.is_null()
+    {
+        errors.push("post_hook must be a string".to_string());
     }
 
-    if let Some(vars_val) = map.get(&Value::from("variables")) {
+    if let Some(vars_val) = map.get(Value::from("variables")) {
         match vars_val {
             Value::Sequence(seq) => lint_variables(seq, errors, &mut variables),
             _ => errors.push("variables must be a list".to_string()),
         }
     }
 
-    if let Some(tags_val) = map.get(&Value::from("tags")) {
+    if let Some(tags_val) = map.get(Value::from("tags")) {
         match tags_val {
             Value::Sequence(seq) => lint_tags(seq, errors),
             _ => errors.push("tags must be a list".to_string()),
         }
     }
 
-    if let Some(extends_val) = map.get(&Value::from("extends")) {
+    if let Some(extends_val) = map.get(Value::from("extends")) {
         if !matches!(extends_val, Value::String(_)) && !extends_val.is_null() {
             errors.push("extends must be a string".to_string());
         } else if let Some(parent) = extends_val.as_str() {
@@ -191,7 +191,7 @@ fn lint_yaml_template(value: &Value, errors: &mut Vec<String>) -> HashSet<String
         }
     }
 
-    match map.get(&Value::from("items")) {
+    match map.get(Value::from("items")) {
         Some(Value::Sequence(items)) => lint_items_value(items, "items", errors),
         Some(_) => errors.push("items must be a list".to_string()),
         None => errors.push("items is required".to_string()),
@@ -259,7 +259,7 @@ fn lint_items_value(items: &[Value], path: &str, errors: &mut Vec<String>) {
             continue;
         };
 
-        let item_type = match map.get(&Value::from("type")) {
+        let item_type = match map.get(Value::from("type")) {
             Some(Value::String(kind)) => kind.as_str(),
             Some(_) => {
                 errors.push(format!("{}.type must be a string", item_path));
@@ -290,13 +290,13 @@ fn lint_directory_item(map: &Mapping, path: &str, errors: &mut Vec<String>) {
         }
     }
 
-    match map.get(&Value::from("name")) {
+    match map.get(Value::from("name")) {
         Some(Value::String(name)) => check_non_empty(&format!("{}.name", path), name, errors),
         Some(_) => errors.push(format!("{}.name must be a string", path)),
         None => errors.push(format!("{}.name is required", path)),
     }
 
-    if let Some(items_val) = map.get(&Value::from("items")) {
+    if let Some(items_val) = map.get(Value::from("items")) {
         match items_val {
             Value::Sequence(items) => lint_items_value(items, &format!("{}.items", path), errors),
             _ => errors.push(format!("{}.items must be a list", path)),
@@ -315,19 +315,20 @@ fn lint_file_item(map: &Mapping, path: &str, errors: &mut Vec<String>) {
         }
     }
 
-    match map.get(&Value::from("name")) {
+    match map.get(Value::from("name")) {
         Some(Value::String(name)) => check_non_empty(&format!("{}.name", path), name, errors),
         Some(_) => errors.push(format!("{}.name must be a string", path)),
         None => errors.push(format!("{}.name is required", path)),
     }
 
-    if let Some(content) = map.get(&Value::from("content")) {
-        if !matches!(content, Value::String(_)) && !content.is_null() {
-            errors.push(format!("{}.content must be a string", path));
-        }
+    if let Some(content) = map.get(Value::from("content"))
+        && !matches!(content, Value::String(_))
+        && !content.is_null()
+    {
+        errors.push(format!("{}.content must be a string", path));
     }
 
-    if let Some(condition) = map.get(&Value::from("when")) {
+    if let Some(condition) = map.get(Value::from("when")) {
         match condition {
             Value::String(value) => check_condition(&format!("{}.when", path), value, errors),
             _ if !condition.is_null() => errors.push(format!("{}.when must be a string", path)),
@@ -341,15 +342,15 @@ fn lint_placeholders(value: &Value, variables: &HashSet<String>, errors: &mut Ve
         return;
     };
 
-    if let Some(Value::String(hook)) = map.get(&Value::from("pre_hook")) {
+    if let Some(Value::String(hook)) = map.get(Value::from("pre_hook")) {
         check_placeholders("pre_hook", hook, variables, errors);
     }
 
-    if let Some(Value::String(hook)) = map.get(&Value::from("post_hook")) {
+    if let Some(Value::String(hook)) = map.get(Value::from("post_hook")) {
         check_placeholders("post_hook", hook, variables, errors);
     }
 
-    if let Some(Value::Sequence(items)) = map.get(&Value::from("items")) {
+    if let Some(Value::Sequence(items)) = map.get(Value::from("items")) {
         lint_item_placeholders(items, "items", variables, errors);
     }
 }
@@ -366,10 +367,10 @@ fn lint_item_placeholders(
             continue;
         };
 
-        if let Some(Value::String(name)) = map.get(&Value::from("name")) {
+        if let Some(Value::String(name)) = map.get(Value::from("name")) {
             check_placeholders(&format!("{}.name", item_path), name, variables, errors);
         }
-        if let Some(Value::String(content)) = map.get(&Value::from("content")) {
+        if let Some(Value::String(content)) = map.get(Value::from("content")) {
             check_placeholders(
                 &format!("{}.content", item_path),
                 content,
@@ -377,10 +378,10 @@ fn lint_item_placeholders(
                 errors,
             );
         }
-        if let Some(Value::String(condition)) = map.get(&Value::from("when")) {
+        if let Some(Value::String(condition)) = map.get(Value::from("when")) {
             check_placeholders(&format!("{}.when", item_path), condition, variables, errors);
         }
-        if let Some(Value::Sequence(inner)) = map.get(&Value::from("items")) {
+        if let Some(Value::Sequence(inner)) = map.get(Value::from("items")) {
             lint_item_placeholders(inner, &format!("{}.items", item_path), variables, errors);
         }
     }

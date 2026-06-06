@@ -1,0 +1,9 @@
+{
+  "name": "cxr",
+  "private": true,
+  "scripts": {
+    "test": "cargo test --locked",
+    "lint": "cargo fmt --check && cargo clippy --locked -- -D warnings",
+    "typecheck": "cargo check --locked"
+  }
+}
