@@ -10,6 +10,14 @@
 - テンプレートのひな形を作成する
 - テンプレート内の変数を置き換えてファイル群を生成する
 
+## インストール
+
+```bash
+cargo install cxr
+```
+
+Homebrew tap と Scoop bucket の更新手順は `packaging/` の helper と別リポジトリで管理します。
+
 ## ビルド
 
 ```bash

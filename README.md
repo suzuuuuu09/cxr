@@ -10,6 +10,14 @@
 - Creates a starter template file
 - Generates files by replacing variables in a template
 
+## Install
+
+```bash
+cargo install cxr
+```
+
+Homebrew tap and Scoop bucket updates are maintained in the `packaging/` helpers and in separate repositories.
+
 ## Build
 
 ```bash
